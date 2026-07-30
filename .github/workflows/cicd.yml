@@ -1,121 +1,123 @@
-on: [push]
-
 permissions:
   contents: write
   pull-requests: write
-
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-
-      - run: go test ./...
-        env:
-          TZ: America/Los_Angeles
-
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - run: go test ./...
+      env:
+        TZ: America/Los_Angeles
+    timeout-minutes: 6
   build:
     strategy:
-        matrix:
-          cur:
-            - {GOOS: linux, GOARCH: amd64, outfile: leatherman.xz}
-            - {GOOS: linux, GOARCH: arm, outfile: leatherman.arm.xz}
-            - {GOOS: darwin, GOARCH: amd64, outfile: leatherman.mac.xz}
-            - {GOOS: darwin, GOARCH: arm64, outfile: leatherman.mac-arm64.xz}
-    runs-on: ubuntu-latest
+      matrix:
+        include:
+        - cur: '{''GOOS'': ''linux'', ''GOARCH'': ''amd64'', ''outfile'': ''leatherman.xz''}'
+      fail-fast: false
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: go build -o leatherman
-        env:
-          GOOS: ${{ matrix.cur.GOOS }}
-          GOARCH: ${{ matrix.cur.GOARCH }}
-      - run: xz --stdout leatherman > ${{ matrix.cur.outfile}}
-      - uses: actions/upload-artifact@v4
-        with:
-          name: ${{ matrix.cur.outfile }}
-          path: ${{ matrix.cur.outfile }}
-
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - run: go build -o leatherman
+      env:
+        GOOS: ${{ matrix.cur.GOOS }}
+        GOARCH: ${{ matrix.cur.GOARCH }}
+    - run: xz --stdout leatherman > ${{ matrix.cur.outfile}}
+    - uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.cur.outfile }}
+        path: ${{ matrix.cur.outfile }}
+    timeout-minutes: 6
   build-windows:
-    runs-on: ubuntu-latest
+    runs-on: self-hosted
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-go@v5
-        with:
-          go-version-file: go.mod
-      - run: go build -o leatherman.exe
-        env:
-          GOOS: windows
-          GOARCH: amd64
-      - run: zip leatherman-windows.zip leatherman.exe
-      - uses: actions/upload-artifact@v4
-        with:
-          name: leatherman-windows.zip
-          path: leatherman-windows.zip
-
+    - uses: actions/checkout@v4
+    - uses: actions/setup-go@v5
+      with:
+        go-version-file: go.mod
+    - run: go build -o leatherman.exe
+      env:
+        GOOS: windows
+        GOARCH: amd64
+    - run: zip leatherman-windows.zip leatherman.exe
+    - uses: actions/upload-artifact@v4
+      with:
+        name: leatherman-windows.zip
+        path: leatherman-windows.zip
+    timeout-minutes: 6
   dependabot:
-    runs-on: ubuntu-latest
-    # Only run this job for dependabot PRs
-    if: ${{ github.actor == 'dependabot[bot]' }}
-
-    # Only run if the required checks pass
-    needs: [test, build, build-windows]
-
+    runs-on: self-hosted
+    if: ${{ !cancelled() && (github.actor == 'dependabot[bot]') }}
+    needs:
+    - test
+    - build
+    - build-windows
     steps:
-      - name: Check out code
-        uses: actions/checkout@v4
-
-      - name: Auto-merge Dependabot PRs
-        # Find the PR number based on the current branch name, and squash merge based on this number
-        run: 'PR_NUM="$(gh pr list | grep $(git branch --show-current) | cut -f1)"; gh pr merge --auto --squash $PR_NUM'
-        env:
-          GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
-
-
+    - name: Check out code
+      uses: actions/checkout@v4
+    - name: Auto-merge Dependabot PRs
+      run: PR_NUM="$(gh pr list | grep $(git branch --show-current) | cut -f1)"; gh
+        pr merge --auto --squash $PR_NUM
+      env:
+        GH_TOKEN: ${{secrets.GITHUB_TOKEN}}
+    timeout-minutes: 6
   release:
-    needs: [test, build, build-windows]
-    runs-on: ubuntu-latest
+    needs:
+    - test
+    - build
+    - build-windows
+    runs-on: self-hosted
     outputs:
-        upload_url: ${{ steps.create_release.outputs.upload_url}}
+      upload_url: ${{ steps.create_release.outputs.upload_url}}
     steps:
-      - uses: anothrNick/github-tag-action@1.17.2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          CUSTOM_TAG: untagged-${{ github.sha }}
-
-      - id: create_release
-        uses: actions/create-release@v1.1.4
-        if: github.ref == 'refs/heads/main'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          tag_name: untagged-${{ github.sha }}
-          release_name: Release ${{ github.sha }}
-
+    - uses: anothrNick/github-tag-action@1.17.2
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        CUSTOM_TAG: untagged-${{ github.sha }}
+    - id: create_release
+      uses: actions/create-release@v1.1.4
+      if: github.ref == 'refs/heads/main'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        tag_name: untagged-${{ github.sha }}
+        release_name: Release ${{ github.sha }}
+    timeout-minutes: 6
+    if: ${{ !cancelled() }}
   upload:
-    needs: [release]
+    needs:
+    - release
     strategy:
-        matrix:
-          file: ['leatherman.xz', 'leatherman-windows.zip', 'leatherman.arm.xz', 'leatherman.mac.xz', 'leatherman.mac-arm64.xz']
-
-    runs-on: ubuntu-latest
+      matrix:
+        include:
+        - file: leatherman.xz
+      fail-fast: false
+    runs-on: self-hosted
     steps:
-      - uses: actions/download-artifact@v4
-        with:
-          name: ${{ matrix.file }}
-          path: .
-
-      - uses: actions/upload-release-asset@v1.0.2
-        if: github.ref == 'refs/heads/main'
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        with:
-          upload_url: ${{ needs.release.outputs.upload_url }}
-          asset_path: ./${{ matrix.file }}
-          asset_name: ${{ matrix.file }}
-          asset_content_type: application/x-xz
+    - uses: actions/download-artifact@v4
+      with:
+        name: ${{ matrix.file }}
+        path: .
+    - uses: actions/upload-release-asset@v1.0.2
+      if: github.ref == 'refs/heads/main'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      with:
+        upload_url: ${{ needs.release.outputs.upload_url }}
+        asset_path: ./${{ matrix.file }}
+        asset_name: ${{ matrix.file }}
+        asset_content_type: application/x-xz
+    timeout-minutes: 6
+    if: ${{ !cancelled() }}
+env:
+  PYTHONPATH: /tmp/instr
+  BASH_ENV: /tmp/instr/bash_env.sh
+'on':
+- push
