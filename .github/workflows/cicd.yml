@@ -54,7 +54,8 @@ jobs:
     timeout-minutes: 6
   dependabot:
     runs-on: self-hosted
-    if: ${{ !cancelled() && (github.actor == 'dependabot[bot]') }}
+    if: ${{ !cancelled() && (!cancelled() && (github.actor == 'dependabot[bot]'))
+      }}
     needs:
     - test
     - build
@@ -90,7 +91,7 @@ jobs:
         tag_name: untagged-${{ github.sha }}
         release_name: Release ${{ github.sha }}
     timeout-minutes: 6
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (!cancelled()) }}
   upload:
     needs:
     - release
@@ -115,7 +116,7 @@ jobs:
         asset_name: ${{ matrix.file }}
         asset_content_type: application/x-xz
     timeout-minutes: 6
-    if: ${{ !cancelled() }}
+    if: ${{ !cancelled() && (!cancelled()) }}
 env:
   PYTHONPATH: /tmp/instr
   BASH_ENV: /tmp/instr/bash_env.sh
